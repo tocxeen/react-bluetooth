@@ -69,6 +69,119 @@ class PrinterService {
     }
   }
 
+  async sendText(text) {
+    const textBytes = this.encoder.encode(text);
+    await this.sendCommand(textBytes);
+  }
+
+  // Print QR code using ESC/POS "GS ( k" commands
+  async printQRCode(qrText, options = {}) {
+    if (!qrText) throw new Error('QR text is empty');
+
+    const size = Math.max(1, Math.min(16, options.size || 6)); // module size 1..16
+    const ecLevel = (options.errorCorrection || 'M').toUpperCase(); // L/M/Q/H
+    const ecMap = { L: 48, M: 49, Q: 50, H: 51 };
+    const ec = ecMap[ecLevel] ?? ecMap.M;
+
+    const data = this.encoder.encode(qrText);
+
+    // Build helper to send a full ESC/POS buffer
+    const sendRaw = async (arr) => this.sendCommand(new Uint8Array(arr));
+
+    // Select model: 2
+    await sendRaw([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
+
+    // Set size
+    await sendRaw([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, size]);
+
+    // Set error correction
+    await sendRaw([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, ec]);
+
+    // Store data
+    const storeLen = data.length + 3; // 3 bytes for cn, fn, m
+    const pL = storeLen & 0xff;
+    const pH = (storeLen >> 8) & 0xff;
+    const header = [0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30];
+    await this.sendCommand(new Uint8Array([...header, ...data]));
+
+    // Print symbol
+    await sendRaw([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
+
+    // Small feed
+    await this.sendCommand(new Uint8Array([0x0A]));
+  }
+
+  // Print a small receipt for a sale, with QR and a teller copy (no QR)
+  async printSaleReceipt({ 
+    eventDescription, 
+    categoryName, 
+    tellerEmail, 
+    ticketId, 
+    price, 
+    quantity, 
+    venueName, 
+    eventDateMs, 
+    qrText 
+  }) {
+    const commands = this.getESCPOSCommands();
+    const dateStr = eventDateMs ? new Date(eventDateMs).toLocaleString() : '';
+
+    // Initialize
+    await this.sendCommand(commands.INIT);
+
+    // Header
+    await this.sendCommand(commands.ALIGN_CENTER);
+    await this.sendCommand(commands.BOLD_ON);
+    await this.sendText('ClicknPay POS\n');
+    await this.sendCommand(commands.BOLD_OFF);
+
+    // Event title
+    if (eventDescription) {
+      await this.sendText(`${eventDescription}\n`);
+    }
+
+    // Details (customer copy)
+    await this.sendCommand(commands.ALIGN_LEFT);
+    if (categoryName) await this.sendText(`Event Category: ${categoryName}\n`);
+    if (tellerEmail) await this.sendText(`Teller: ${tellerEmail}\n`);
+    if (ticketId) await this.sendText(`Ticket#: ${ticketId}\n`);
+    if (price != null && price !== '') await this.sendText(`Price: ${price}\n`);
+    if (quantity != null && quantity !== '') await this.sendText(`Quantity: ${quantity}\n`);
+    if (venueName) await this.sendText(`Venue: ${venueName}\n`);
+    if (dateStr) await this.sendText(`Date & Time: ${dateStr}\n`);
+
+    // QR centered
+    await this.sendCommand(commands.ALIGN_CENTER);
+    if (qrText) {
+      await this.printQRCode(qrText, { size: 6, errorCorrection: 'M' });
+    }
+
+    // Footer
+    await this.sendText('---------------------------------\n');
+    await this.sendText('Thank you for using Clicknpay.\n');
+    await this.sendCommand(commands.LINE_FEED);
+
+    // Teller copy (no QR)
+    await this.sendCommand(commands.ALIGN_CENTER);
+    await this.sendCommand(commands.BOLD_ON);
+    await this.sendText('Teller Copy\n');
+    await this.sendCommand(commands.BOLD_OFF);
+    await this.sendCommand(commands.ALIGN_LEFT);
+
+    if (ticketId) await this.sendText(`Ticket Id: ${ticketId}\n`);
+    if (categoryName) await this.sendText(`Category: ${categoryName}\n`);
+    if (price != null && price !== '') await this.sendText(`Price: ${price}\n`);
+    if (dateStr) await this.sendText(`Date & Time: ${dateStr}\n`);
+    if (tellerEmail) await this.sendText(`Teller: ${tellerEmail}\n`);
+    if (quantity != null && quantity !== '') await this.sendText(`Quantity: ${quantity}\n`);
+
+    await this.sendCommand(commands.LINE_FEED);
+    // Optional cut
+    try { await this.sendCommand(commands.CUT_PAPER); } catch {}
+
+    return true;
+  }
+
   async printTestPage() {
     const commands = this.getESCPOSCommands();
     
