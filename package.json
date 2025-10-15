@@ -7,6 +7,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
+    "electron-is-dev": "^3.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-scripts": "5.0.1",
@@ -20,12 +21,15 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "GENERATE_SOURCEMAP=false react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "electron": "electron .",
     "electron-dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\"",
-    "build-electron": "npm run build && electron ."
+    "build-electron": "npm run build && electron .",
+    "postbuild": "node -e \"require('fs').copyFileSync('public/electron.js','build/electron.js')\"",
+    "dist-win": "npm run build && electron-builder --win --x64 --publish=never",
+    "dist-win-fast": "npm run build && electron-builder --win portable --x64 -c.compression=store --publish=never"
   },
   "eslintConfig": {
     "extends": [
