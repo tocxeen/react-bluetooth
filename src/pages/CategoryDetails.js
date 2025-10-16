@@ -156,6 +156,60 @@ export default function CategoryDetails({ token, event, category, onBack }) {
     );
   }
 
+    // Helper: print only the customer receipt (with QR)
+    const printCustomerReceipt = async ({ ticketId, qrText, priceStr }) => {
+      const c = PrinterService.getESCPOSCommands();
+      await PrinterService.sendCommand(c.INIT);
+      await PrinterService.sendCommand(c.ALIGN_CENTER);
+      await PrinterService.sendCommand(c.BOLD_ON);
+      await PrinterService.sendText('ClicknPay POS\n');
+      await PrinterService.sendCommand(c.BOLD_OFF);
+
+      if (event?.description) await PrinterService.sendText(`${event.description}\n`);
+
+      await PrinterService.sendCommand(c.ALIGN_LEFT);
+      if (category?.ticketCategoryName) await PrinterService.sendText(`Event Category: ${category.ticketCategoryName}\n`);
+      const tellerEmail = localStorage.getItem('authUsername') || '';
+      if (tellerEmail) await PrinterService.sendText(`Teller: ${tellerEmail}\n`);
+      if (ticketId) await PrinterService.sendText(`Ticket#: ${ticketId}\n`);
+      if (priceStr) await PrinterService.sendText(`Price: ${priceStr}\n`);
+      await PrinterService.sendText(`Quantity: 1\n`);
+      if (event?.venueName) await PrinterService.sendText(`Venue: ${event.venueName}\n`);
+      if (event?.eventDate) await PrinterService.sendText(`Date & Time: ${new Date(event.eventDate).toLocaleString()}\n`);
+
+      await PrinterService.sendCommand(c.ALIGN_CENTER);
+      if (qrText) await PrinterService.printQRCode(qrText, { size: 6, errorCorrection: 'M' });
+
+      await PrinterService.sendText('---------------------------------\n');
+      await PrinterService.sendText('Thank you for using Clicknpay.\n');
+      // Remove extra feed to reduce trailing space
+      // await PrinterService.sendCommand(c.LINE_FEED);
+      try { await PrinterService.sendCommand(c.CUT_PAPER); } catch {}
+    };
+
+    // Helper: print only the teller copy (no QR)
+    const printTellerCopy = async ({ ticketId, priceStr }) => {
+      const c = PrinterService.getESCPOSCommands();
+      await PrinterService.sendCommand(c.INIT);
+      await PrinterService.sendCommand(c.ALIGN_CENTER);
+      await PrinterService.sendCommand(c.BOLD_ON);
+      await PrinterService.sendText('Teller Copy\n');
+      await PrinterService.sendCommand(c.BOLD_OFF);
+
+      await PrinterService.sendCommand(c.ALIGN_LEFT);
+      if (ticketId) await PrinterService.sendText(`Ticket Id: ${ticketId}\n`);
+      if (category?.ticketCategoryName) await PrinterService.sendText(`Category: ${category.ticketCategoryName}\n`);
+      if (priceStr) await PrinterService.sendText(`Price: ${priceStr}\n`);
+      if (event?.eventDate) await PrinterService.sendText(`Date & Time: ${new Date(event.eventDate).toLocaleString()}\n`);
+      const tellerEmail = localStorage.getItem('authUsername') || '';
+      if (tellerEmail) await PrinterService.sendText(`Teller: ${tellerEmail}\n`);
+      await PrinterService.sendText(`Quantity: 1\n`);
+
+      // Remove extra feed to reduce trailing space
+      // await PrinterService.sendCommand(c.LINE_FEED);
+      try { await PrinterService.sendCommand(c.CUT_PAPER); } catch {}
+    };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -163,31 +217,32 @@ export default function CategoryDetails({ token, event, category, onBack }) {
 
     // If roll full, block
     if (ticketsSold >= ROLL_MAX) {
-      setMsg('Paper roll full. Please change paper roll before selling.');
-      setBusy(false);
-      return;
+        setMsg('Paper roll full. Please change paper roll before selling.');
+        setBusy(false);
+        return;
     }
 
     // Normalize from input string (allowing edits), clamp min 1
     const qtyNum = Math.max(1, parseInt(quantityInput, 10) || 1);
     // Enforce remaining capacity on this roll
     if (qtyNum > remainingOnRoll) {
-      setMsg(`Maximum allowed this roll is ${remainingOnRoll}. Reduce quantity or change paper roll.`);
-      setBusy(false);
-      return;
+        setMsg(`Maximum allowed this roll is ${remainingOnRoll}. Reduce quantity or change paper roll.`);
+        setBusy(false);
+        return;
     }
     const qtyStr = String(qtyNum);
     if (qtyNum !== quantity) setQuantity(qtyNum);
 
     const priceStr = category?.price != null ? String(category.price) : '0';
     const forexPriceStr = (() => {
-      const fp = category?.forexPrice;
-      if (fp && typeof fp === 'object' && fp.parsedValue != null) return String(fp.parsedValue);
-      if (fp != null) return String(fp);
-      return '0';
+        const fp = category?.forexPrice;
+        if (fp && typeof fp === 'object' && fp.parsedValue != null) return String(fp.parsedValue);
+        if (fp != null) return String(fp);
+        return '0';
     })();
 
-    const payload = {
+    // Build payload per ticket: qty=1, numberOfTickets=1
+    const makePayloadOnce = () => ({
       selectedEventTicketCategoryList: [
         {
           buy: 0,
@@ -195,9 +250,9 @@ export default function CategoryDetails({ token, event, category, onBack }) {
           forexPrice: forexPriceStr,
           getFree: 0,
           id: category.id,
-          numberOfTickets: qtyStr,
+          numberOfTickets: '1',
           price: priceStr,
-          qty: qtyStr,
+          qty: '1',
           tempTicketCategoryId: category.id,
           ticketCategoryName: category.ticketCategoryName,
           ticketTemplateContent: '',
@@ -205,71 +260,86 @@ export default function CategoryDetails({ token, event, category, onBack }) {
       ],
       seatsChecked: [],
       loggedInUser,
-    };
+    });
 
-    try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const endpoint = 'https://backendservices.clicknpay.africa/eticketservicestest/eventTicket/checkout/ClicknPay/richard@clicknpay.africa/0782428177/NOTALLIANCE/GATESALES';
 
-      const resp = await fetch('https://backendservices.clicknpay.africa/eticketservicestest/eventTicket/checkout/ClicknPay/richard@clicknpay.africa/0782428177/NOTALLIANCE/GATESALES', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
+    let successCount = 0;
+    let failureCount = 0;
+    const startSold = ticketsSold;
+    const successes = []; // collect successful ticket data for teller copies
 
-      // Try JSON to extract ticket & qr
-      let data = null;
+    for (let i = 0; i < qtyNum; i++) {
+      const currentRemaining = Math.max(0, ROLL_MAX - (startSold + successCount));
+      if (currentRemaining <= 0) {
+        failureCount += (qtyNum - i);
+        break;
+      }
+
       try {
-        data = await resp.clone().json();
+        setMsg(`Processing ${i + 1}/${qtyNum}...`);
+        const resp = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(makePayloadOnce()) });
+
+        // Parse
+        let data = null;
+        try {
+          data = await resp.clone().json();
+        } catch {
+          const txt = await resp.text();
+          if (!resp.ok) throw new Error(txt || `Request failed (${resp.status})`);
+          data = {};
+        }
+        if (!resp.ok) {
+          const errText = typeof data === 'string' ? data : JSON.stringify(data);
+          throw new Error(errText || `Request failed (${resp.status})`);
+        }
+
+        // Extract and print customer receipt now
+        const ticket = Array.isArray(data.ticketIds) && data.ticketIds.length > 0 ? data.ticketIds[0] : null;
+        const qrText = ticket?.qrCode || '';
+        const ticketId = ticket?.ticketId || '';
+
+        try {
+          await printCustomerReceipt({ ticketId, qrText, priceStr });
+          successCount += 1;
+          successes.push({ ticketId, priceStr }); // store for teller copies
+        } catch {
+          failureCount += 1;
+        }
+
+        await new Promise(r => setTimeout(r, 150));
       } catch {
-        const txt = await resp.text();
-        if (!resp.ok) throw new Error(txt || `Request failed (${resp.status})`);
-        setMsg(txt || 'Sale submitted successfully.');
-        setBusy(false);
-        return;
+        failureCount += 1;
       }
-
-      if (!resp.ok) {
-        const errText = typeof data === 'string' ? data : JSON.stringify(data);
-        throw new Error(errText || `Request failed (${resp.status})`);
-      }
-
-      setMsg('Sale submitted successfully.');
-
-      // Extract ticket info
-      const ticket = Array.isArray(data.ticketIds) && data.ticketIds.length > 0 ? data.ticketIds[0] : null;
-      const qrText = ticket?.qrCode || '';
-      const ticketId = ticket?.ticketId || '';
-      const priceOut = category?.price != null ? String(category.price) : '0';
-      const qtyOut = qtyStr;
-
-      // Print receipt
-      try {
-        await PrinterService.printSaleReceipt({
-          eventDescription: event.description,
-          categoryName: category.ticketCategoryName,
-          tellerEmail: loggedInUser || '',
-          ticketId,
-          price: priceOut,
-          quantity: qtyOut,
-          venueName: event.venueName || '',
-          eventDateMs: event.eventDate,
-          qrText
-        });
-
-        // Increment tickets sold and reset quantity inputs
-        const inc = Math.max(0, parseInt(qtyOut, 10) || 0);
-        if (inc > 0) persistTicketsSold(ticketsSold + inc);
-        setQuantity(1);
-        setQuantityInput('1');
-      } catch (printErr) {
-        setMsg(prev => (prev ? prev + ' | ' : '') + `Print failed: ${printErr.message}`);
-      }
-    } catch (err) {
-      setMsg(err.message || 'Submission failed');
-    } finally {
-      setBusy(false);
     }
+
+    // After all customer receipts, print teller copies (no QR)
+    for (const t of successes) {
+      try {
+        await printTellerCopy(t);
+      } catch {
+        // ignore individual teller copy failures in summary, optional: collect stats
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    // Update roll counter based on successful customer prints only
+    if (successCount > 0) {
+      persistTicketsSold(startSold + successCount);
+    }
+
+    // Reset
+    setQuantity(1);
+    setQuantityInput('1');
+
+    // Summary
+    if (failureCount === 0) setMsg(`Sale submitted successfully. Printed ${successCount} ticket(s) + ${successes.length} teller copy(ies).`);
+    else if (successCount === 0) setMsg('No tickets were printed. Please try again.');
+    else setMsg(`Printed ${successCount} ticket(s), ${failureCount} failed. Teller copies attempted: ${successes.length}.`);
+
+    setBusy(false);
   };
 
   return (
