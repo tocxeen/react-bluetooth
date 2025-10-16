@@ -34,8 +34,8 @@ export default function CategoryDetails({ token, event, category, onBack }) {
   };
 
   // Roll settings and derived values
-  const ROLL_MAX = 10;
-  const ROLL_WARN_THRESHOLD = 8;
+  const ROLL_MAX = 60;
+  const ROLL_WARN_THRESHOLD = ROLL_MAX - 2;
   const remainingOnRoll = Math.max(0, ROLL_MAX - ticketsSold);
 
   // Responsive breakpoints
@@ -391,7 +391,7 @@ export default function CategoryDetails({ token, event, category, onBack }) {
             </>
           ) : remainingOnRoll === 0 ? (
             <>
-              <div className="subtle" style={styles.subtle}>Paper roll full (10/10).</div>
+              <div className="subtle" style={styles.subtle}>Paper roll full ({ROLL_MAX}/{ROLL_MAX}).</div>
               <div style={styles.statusBox('salmon')}>Paper roll is full. Change paper roll to continue.</div>
               <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
                 <button type="button" onClick={handleChangeRoll} style={styles.btnDanger}>
