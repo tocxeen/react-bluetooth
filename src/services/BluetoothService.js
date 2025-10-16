@@ -250,6 +250,69 @@ class BluetoothService {
   getCharacteristic() {
     return this.characteristic;
   }
+
+  // NEW: hint Electron main to prefer a device id for selection
+  _setPreferredDeviceId(deviceId) {
+    try {
+      const ipc = window.require ? window.require('electron').ipcRenderer : null;
+      if (ipc) ipc.send('bluetooth:set-preferred', deviceId || null);
+    } catch {
+      // noop
+    }
+  }
+
+  // NEW: optional services used for printers
+  _getOptionalServices() {
+    return [
+      '000018f0-0000-1000-8000-00805f9b34fb',
+      'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+      '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+      '0000ff00-0000-1000-8000-00805f9b34fb',
+      '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+      'generic_access',
+      'generic_attribute'
+    ];
+    // Keep in sync with scanForDevices if you’ve customized it
+  }
+
+  // NEW: try to silently reconnect to a saved printer on app load
+  async attemptAutoReconnect(saved) {
+    if (!saved || (!saved.id && !saved.name)) return false;
+
+    try {
+      // First, try getDevices (no prompt, where supported)
+      if (navigator.bluetooth && navigator.bluetooth.getDevices) {
+        const allowed = await navigator.bluetooth.getDevices();
+        const match = allowed.find(d =>
+          (saved.id && d.id === saved.id) ||
+          (saved.name && d.name === saved.name)
+        );
+        if (match) {
+          await this.connectToDevice(match);
+          return true;
+        }
+      }
+    } catch (e) {
+      // ignore and fall back to requestDevice path
+    }
+
+    // Fall back: hint main about preferred id, then call requestDevice
+    try {
+      this._setPreferredDeviceId(saved.id || null);
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: this._getOptionalServices()
+      });
+      await this.connectToDevice(device);
+      return true;
+    } catch (e) {
+      // swallow, let caller decide
+      return false;
+    } finally {
+      // clear hint
+      this._setPreferredDeviceId(null);
+    }
+  }
 }
 
 export default new BluetoothService();

@@ -18,6 +18,21 @@ export default function SearchBluetooth({ onConnected, onSkip }) {
     try { return window.require ? window.require('electron').ipcRenderer : null; } catch { return null; }
   }, []);
 
+  // Responsive breakpoints
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  useEffect(() => {
+    const onResize = () => {
+      const w = window.innerWidth;
+      setIsMobile(w <= 640);
+      setIsTablet(w > 640 && w <= 1024);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const gridCols = useMemo(() => (isMobile ? 1 : isTablet ? 2 : 3), [isMobile, isTablet]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -94,65 +109,146 @@ export default function SearchBluetooth({ onConnected, onSkip }) {
     }
   };
 
+  // Theme + styles (match Home.js)
+  const theme = {
+    primary: '#00878a',
+    accent: '#f39c12',
+    cardBg: 'rgba(255,255,255,0.05)',
+    cardBorder: 'rgba(0,135,138,0.35)',
+    chipBorder: 'rgba(255,255,255,0.25)'
+  };
+  const styles = {
+    shell: { width: '96%', maxWidth: 1200 },
+    headerRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 },
+    pageTitle: { margin: 0, fontSize: 22, fontWeight: 700 },
+    actions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+    btnPrimary: {
+      padding: '8px 14px', borderRadius: 8, border: `1px solid ${theme.primary}`, color: '#fff',
+      background: theme.primary, cursor: 'pointer'
+    },
+    btnSecondary: {
+      padding: '8px 14px', borderRadius: 8, border: `1px solid ${theme.accent}`, color: '#fff',
+      background: 'transparent', cursor: 'pointer'
+    },
+    infoRow: {
+      display: 'grid',
+      gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : '1fr 1fr 1fr',
+      gap: 12,
+      marginBottom: 16
+    },
+    card: {
+      background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 12, padding: 14
+    },
+    cardTitle: { fontWeight: 700, margin: 0, marginBottom: 8 },
+    subtle: { fontSize: 12, opacity: 0.8 },
+    warn: { fontSize: 12, color: 'salmon' },
+    ok: { fontSize: 12, color: theme.accent },
+    gridDevices: {
+      display: 'grid',
+      gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+      gap: 12
+    },
+    deviceCard: {
+      background: theme.cardBg, border: `1px solid ${theme.cardBorder}`, borderRadius: 12, padding: 14
+    },
+    statusBox: (color) => ({
+      border: `1px solid ${color}`, color, padding: 10, borderRadius: 8, background: 'rgba(0,0,0,0.15)', marginTop: 8
+    }),
+    modalPanel: {
+      background: '#1e1e1e', color: '#fff', border: `1px solid ${theme.cardBorder}`, borderRadius: 8,
+      width: '90%', maxWidth: 520, maxHeight: '80vh', overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.5)'
+    },
+    chipSaved: {
+      border: `1px dashed ${theme.chipBorder}`, borderRadius: 8, padding: 10, marginTop: 10, background: 'transparent'
+    }
+  };
+
   return (
-    <div style={{ width: '95%', maxWidth: 1000 }}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 style={{ margin: 0 }}>Select Bluetooth Printer</h3>
-        <div>
-          <button onClick={onSkip} style={{ padding: '6px 12px' }}>Skip</button>
+    <div style={styles.shell}>
+      {/* Header */}
+      <div style={styles.headerRow}>
+        <h3 style={styles.pageTitle}>Select Bluetooth Printer</h3>
+        <div style={styles.actions}>
+          <button onClick={scanForDevices} disabled={isScanning || !bluetoothAvailable} style={styles.btnPrimary}>
+            {isScanning ? 'Scanning…' : 'Scan'}
+          </button>
+          <button onClick={onSkip} style={styles.btnSecondary}>Skip</button>
         </div>
       </div>
 
-      {!bluetoothAvailable && (
-        <div style={{ color: 'red', marginTop: 12 }}>
-          Bluetooth is not available. Please enable it and restart the app.
+      {/* Info cards row */}
+      <div style={styles.infoRow}>
+        <div style={styles.card}>
+          <h4 style={styles.cardTitle}>Bluetooth</h4>
+          <div className="subtle" style={styles.subtle}>
+            {bluetoothAvailable ? 'Available' : 'Unavailable'} • Ensure Bluetooth is enabled.
+          </div>
+          {!bluetoothAvailable && (
+            <div style={styles.statusBox('salmon')}>Bluetooth is not available. Please enable it and restart the app.</div>
+          )}
+          {status && <div style={styles.statusBox('deepskyblue')}>{status}</div>}
+          {error && <div style={styles.statusBox('salmon')}>{error}</div>}
         </div>
-      )}
 
-      {status && <div style={{ color: 'deepskyblue', marginTop: 10, border: '1px solid deepskyblue', padding: 8 }}>{status}</div>}
-      {error && <div style={{ color: 'salmon', marginTop: 10, border: '1px solid salmon', padding: 8 }}>{error}</div>}
-
-      <button
-        onClick={scanForDevices}
-        disabled={isScanning || !bluetoothAvailable}
-        style={{ margin: '16px 0', padding: '10px 20px' }}
-      >
-        {isScanning ? 'Scanning...' : 'Scan for Devices'}
-      </button>
-
-      {/* Previously saved printer */}
-      {!connectedDevice && localStorage.getItem('printerDevice') && (
-        <div style={{ margin: '10px 0', padding: 10, border: '1px dashed #777' }}>
-          <small>
-            Previously selected printer:{' '}
-            {(() => {
-              try {
-                const p = JSON.parse(localStorage.getItem('printerDevice'));
-                return `${p?.name || 'Unknown'} (${p?.id || '-'})`;
-              } catch { return '-'; }
-            })()}
-          </small>
+        <div style={styles.card}>
+          <h4 style={styles.cardTitle}>Current Session</h4>
+          {connectedDevice ? (
+            <div>
+              <div><strong style={{ color: theme.primary }}>{connectedDevice.name || 'Unknown Device'}</strong></div>
+              <div style={styles.subtle}>ID: {connectedDevice.id}</div>
+              <div style={styles.ok}>Status: Connected</div>
+            </div>
+          ) : (
+            <div className="subtle" style={styles.subtle}>No device connected</div>
+          )}
+          {!connectedDevice && localStorage.getItem('printerDevice') && (
+            <div style={styles.chipSaved}>
+              <small>
+                Previously selected:{' '}
+                {(() => {
+                  try {
+                    const p = JSON.parse(localStorage.getItem('printerDevice'));
+                    return `${p?.name || 'Unknown'} (${p?.id || '-'})`;
+                  } catch { return '-'; }
+                })()}
+              </small>
+            </div>
+          )}
         </div>
-      )}
 
+        <div style={styles.card}>
+          <h4 style={styles.cardTitle}>Actions</h4>
+          <div className="subtle" style={styles.subtle}>Choose a device below to connect and continue.</div>
+          <div style={{ marginTop: 8 }}>
+            <button onClick={scanForDevices} disabled={isScanning || !bluetoothAvailable} style={styles.btnPrimary}>
+              {isScanning ? 'Scanning…' : 'Scan for Devices'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Devices grid */}
       {devices.length > 0 && (
-        <div style={{ margin: '10px 0' }}>
-          <h4>Available Devices</h4>
-          <div style={{ display: 'grid', gap: 10 }}>
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '8px 0' }}>
+            <h4 style={{ margin: 0 }}>Available Devices</h4>
+            <span style={{ fontSize: 12, opacity: 0.8 }}>{devices.length} found</span>
+          </div>
+          <div style={styles.gridDevices}>
             {devices.map((d, idx) => (
-              <div key={`${d.id}-${idx}`} style={{ border: '1px solid #555', padding: 10, borderRadius: 6 }}>
+              <div key={`${d.id}-${idx}`} style={styles.deviceCard}>
                 <div><strong>{d.name || 'Unknown Device'}</strong></div>
-                <div style={{ fontSize: 12, opacity: 0.7 }}>ID: {d.id}</div>
+                <div style={{ fontSize: 12, opacity: 0.7, wordBreak: 'break-all' }}>ID: {d.id}</div>
                 <button
                   onClick={() => connectToDevice(d)}
-                  style={{ marginTop: 8, padding: '6px 12px' }}
+                  style={{ ...styles.btnPrimary, marginTop: 10 }}
                 >
                   Connect
                 </button>
               </div>
             ))}
           </div>
-        </div>
+        </>
       )}
 
       {/* Modal chooser for packaged .exe */}
@@ -161,11 +257,8 @@ export default function SearchBluetooth({ onConnected, onSkip }) {
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
           onClick={cancelBtSelection}
         >
-          <div
-            style={{ background: '#1e1e1e', color: '#fff', border: '1px solid #444', borderRadius: 8, width: '90%', maxWidth: 520, maxHeight: '80vh', overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #333' }}>
+          <div style={styles.modalPanel} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.cardBorder}` }}>
               <h3 style={{ margin: 0 }}>Choose a device</h3>
               <p style={{ margin: '8px 0 0 0', fontSize: 12, opacity: 0.8 }}>This list updates as new devices are found.</p>
             </div>
@@ -174,18 +267,18 @@ export default function SearchBluetooth({ onConnected, onSkip }) {
                 <div style={{ opacity: 0.8 }}>Scanning...</div>
               ) : (
                 btModalDevices.map(d => (
-                  <div key={d.deviceId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #333', padding: 10, borderRadius: 6, marginBottom: 10 }}>
+                  <div key={d.deviceId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: `1px solid ${theme.cardBorder}`, padding: 10, borderRadius: 6, marginBottom: 10 }}>
                     <div>
                       <div style={{ fontWeight: 600 }}>{d.deviceName || 'Unknown Device'}</div>
                       <div style={{ fontSize: 12, opacity: 0.7, wordBreak: 'break-all' }}>ID: {d.deviceId}</div>
                     </div>
-                    <button onClick={() => chooseBtDevice(d.deviceId)} style={{ padding: '6px 12px' }}>Select</button>
+                    <button onClick={() => chooseBtDevice(d.deviceId)} style={styles.btnPrimary}>Select</button>
                   </div>
                 ))
               )}
             </div>
-            <div style={{ padding: 16, borderTop: '1px solid #333', textAlign: 'right' }}>
-              <button onClick={cancelBtSelection} style={{ padding: '8px 14px' }}>Cancel</button>
+            <div style={{ padding: 16, borderTop: `1px solid ${theme.cardBorder}`, textAlign: 'right' }}>
+              <button onClick={cancelBtSelection} style={styles.btnSecondary}>Cancel</button>
             </div>
           </div>
         </div>

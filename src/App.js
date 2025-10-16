@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import SearchBluetooth from './pages/SearchBluetooth';
 import Home from './pages/Home';
 import CategoryDetails from './pages/CategoryDetails';
+import BluetoothService from './services/BluetoothService'; // NEW
 
 function App() {
   const [screen, setScreen] = useState('login'); // 'login' | 'search' | 'home' | 'category'
@@ -19,7 +20,10 @@ function App() {
     if (savedToken) setToken(savedToken);
     if (savedPrinter) {
       try {
-        setPrinter(JSON.parse(savedPrinter));
+        const parsed = JSON.parse(savedPrinter);
+        setPrinter(parsed);
+        // NEW: attempt silent reconnect
+        BluetoothService.attemptAutoReconnect(parsed).catch(() => {});
       } catch {}
     }
     // Decide initial screen
