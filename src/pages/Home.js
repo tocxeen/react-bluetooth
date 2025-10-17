@@ -40,7 +40,7 @@ export default function Home({ token, printer, onChangePrinter, onOpenCategory }
         return pr !== 0 ? pr : (a.eventDate || 0) - (b.eventDate || 0);
       });
       // remove all events except 741 and 777 (id may be string or number)
-      const allowed = new Set(['741', '777']);
+      const allowed = new Set([ '777']);
       setEvents(sorted.filter(ev => allowed.has(String(ev.id))));
     } catch (e) {
       setErr(e.message || 'Failed to load events');
