@@ -40,7 +40,7 @@ export default function Home({ token, printer, onChangePrinter, onOpenCategory }
         return pr !== 0 ? pr : (a.eventDate || 0) - (b.eventDate || 0);
       });
       // remove all events except 741 and 777 (id may be string or number)
-      const allowed = new Set([ '777']);
+      const allowed = new Set([ '741', '777']);
       setEvents(sorted.filter(ev => allowed.has(String(ev.id))));
     } catch (e) {
       setErr(e.message || 'Failed to load events');
@@ -238,23 +238,30 @@ export default function Home({ token, printer, onChangePrinter, onOpenCategory }
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: theme.accent, marginTop: 4 }} />
             </div>
 
-            {Array.isArray(ev.eventTicketCategories) && ev.eventTicketCategories.length > 0 && (
-              <div style={styles.chipRow}>
-                {ev.eventTicketCategories.slice(0, 4).map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => onOpenCategory && onOpenCategory(ev, cat)}
-                    style={styles.chip}
-                    title="Open category details"
-                  >
-                    {cat.ticketCategoryName}: {cat.price}
-                  </button>
-                ))}
-                {ev.eventTicketCategories.length > 4 && (
-                  <span style={styles.more}>+{ev.eventTicketCategories.length - 4} more</span>
-                )}
-              </div>
-            )}
+            {(() => {
+              const allCats = Array.isArray(ev.eventTicketCategories) ? ev.eventTicketCategories : [];
+              const cats = String(ev.id) === '741'
+                ? allCats.filter(cat => String(cat.id) === '2037')
+                : allCats;
+              if (cats.length === 0) return null;
+              return (
+                <div style={styles.chipRow}>
+                  {cats.slice(0, 4).map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => onOpenCategory && onOpenCategory(ev, cat)}
+                      style={styles.chip}
+                      title="Open category details"
+                    >
+                      {cat.ticketCategoryName}: {cat.forexPrice}
+                    </button>
+                  ))}
+                  {cats.length > 4 && (
+                    <span style={styles.more}>+{cats.length - 4} more</span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>

@@ -364,7 +364,7 @@ export default function CategoryDetails({ token, event, category, onBack }) {
 
           <div style={{ marginTop: 10 }}>
             <div><strong>Category:</strong> {category.ticketCategoryName}</div>
-            <div><strong>Price:</strong> {category.price}</div>
+            <div><strong>Price:</strong> {category.forexPrice}</div>
             <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
               Event ID: {event.id} • Category ID: {category.id}
             </div>
