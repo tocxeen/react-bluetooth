@@ -48,6 +48,7 @@ export default function Home({ token, printer, onChangePrinter, onOpenCategory }
       setLoading(false);
     }
   };
+  
 
   useEffect(() => { fetchEvents(); }, []); // on mount
 
