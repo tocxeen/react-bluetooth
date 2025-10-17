@@ -265,7 +265,7 @@ export default function CategoryDetails({ token, event, category, onBack }) {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const tellerEmail = localStorage.getItem('authUsername') || '';
-    const endpoint = `https://backendservices.clicknpay.africa/eticketservicestest/eventTicket/checkout/ClicknPay/${tellerEmail}/0775402193/NOTALLIANCE/GATESALES`;
+    const endpoint = `https://backendservices.clicknpay.africa/eticketservices/eventTicket/checkout/ClicknPay/${tellerEmail}/0775402193/NOTALLIANCE/GATESALES`;
 
     let successCount = 0;
     let failureCount = 0;
