@@ -5,6 +5,7 @@ export default function Home({ token, printer, onChangePrinter, onOpenCategory }
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [reprintCount, setReprintCount] = useState(0);
 
   // Responsive breakpoints
   const [isMobile, setIsMobile] = useState(false);
@@ -40,7 +41,7 @@ export default function Home({ token, printer, onChangePrinter, onOpenCategory }
         return pr !== 0 ? pr : (a.eventDate || 0) - (b.eventDate || 0);
       });
       // remove all events except 741 and 777 (id may be string or number)
-      const allowed = new Set([ '741', '777']);
+      const allowed = new Set([ '1007', '777']);
       setEvents(sorted.filter(ev => allowed.has(String(ev.id))));
     } catch (e) {
       setErr(e.message || 'Failed to load events');
@@ -48,6 +49,16 @@ export default function Home({ token, printer, onChangePrinter, onOpenCategory }
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const username = localStorage.getItem('authUsername') || 'guest';
+    try {
+      const value = parseInt(localStorage.getItem(`reprintCount_${username}`) || '0', 10);
+      setReprintCount(Number.isFinite(value) ? value : 0);
+    } catch {
+      setReprintCount(0);
+    }
+  }, []);
   
 
   useEffect(() => { fetchEvents(); }, []); // on mount
@@ -186,6 +197,11 @@ export default function Home({ token, printer, onChangePrinter, onOpenCategory }
           <div className="subtle" style={styles.subtle}>
             {printerConnected ? (printer?.name || 'Unknown') : (printer ? `Saved: ${printer.name || 'Unknown'}` : 'Select a printer to start')}
           </div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statLabel}>Reprint Count</div>
+          <div style={styles.statValue}>{reprintCount}</div>
+          <div className="subtle" style={styles.subtle}>Total previous tickets reprinted on this browser</div>
         </div>
       </div>
 

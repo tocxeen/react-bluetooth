@@ -8,6 +8,8 @@ export default function CategoryDetails({ token, event, category, onBack }) {
   const [customerInfo, setCustomerInfo] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [lastBatch, setLastBatch] = useState(null);
+  const [reprintCount, setReprintCount] = useState(0);
 
   const eventDateStr = useMemo(
     () => (event?.eventDate ? new Date(event.eventDate).toLocaleString() : ''),
@@ -28,9 +30,109 @@ export default function CategoryDetails({ token, event, category, onBack }) {
     }
   }, [soldKey]);
 
+  useEffect(() => {
+    const username = localStorage.getItem('authUsername') || 'guest';
+    try {
+      const batch = JSON.parse(localStorage.getItem(`lastBatch_${username}`) || 'null');
+      setLastBatch(batch && Array.isArray(batch.tickets) ? batch : null);
+    } catch {
+      setLastBatch(null);
+    }
+
+    try {
+      const count = parseInt(localStorage.getItem(`reprintCount_${username}`) || '0', 10);
+      setReprintCount(Number.isFinite(count) ? count : 0);
+    } catch {
+      setReprintCount(0);
+    }
+  }, []);
+
   const persistTicketsSold = (val) => {
     setTicketsSold(val);
     try { localStorage.setItem(soldKey, String(val)); } catch {}
+  };
+
+  const saveLastBatch = (batch) => {
+    const username = localStorage.getItem('authUsername') || 'guest';
+    try { localStorage.setItem(`lastBatch_${username}`, JSON.stringify(batch)); } catch {}
+    setLastBatch(batch);
+  };
+
+  const incrementReprintCount = (amount = 1) => {
+    const username = localStorage.getItem('authUsername') || 'guest';
+    const next = reprintCount + amount;
+    try { localStorage.setItem(`reprintCount_${username}`, String(next)); } catch {}
+    setReprintCount(next);
+  };
+
+  const promptReprintPin = () => {
+    const entered = window.prompt('Enter reprint PIN');
+    if (!entered) return null;
+    return entered.trim();
+  };
+
+  const handleReprintPreviousBatch = async () => {
+    if (!lastBatch || !Array.isArray(lastBatch.tickets) || lastBatch.tickets.length === 0) {
+      setMsg('No previous batch available to reprint.');
+      return;
+    }
+
+    const pin = promptReprintPin();
+    if (!pin) {
+      setMsg('Reprint canceled.');
+      return;
+    }
+    if (pin !== '400290') {
+      setMsg('Invalid PIN. Reprint aborted.');
+      return;
+    }
+
+    if (!printerConnected) {
+      setMsg('Printer not connected. Connect a printer before reprinting.');
+      return;
+    }
+
+    setBusy(true);
+    setMsg('Reprinting previous batch...');
+    const tickets = Array.isArray(lastBatch.tickets) ? lastBatch.tickets : [];
+    let printedCount = 0;
+
+    try {
+      for (const item of tickets) {
+        try {
+          await printCustomerReceipt({
+            ticketId: item.ticketId,
+            qrText: item.qrText,
+            priceStr: item.priceStr
+          });
+          printedCount += 1;
+          await new Promise((r) => setTimeout(r, 120));
+        } catch (err) {
+          console.error('Customer reprint failed for ticket', item, err);
+        }
+      }
+
+      for (const item of tickets) {
+        try {
+          await printTellerCopy({
+            ticketId: item.ticketId,
+            priceStr: item.priceStr
+          });
+          await new Promise((r) => setTimeout(r, 120));
+        } catch (err) {
+          console.error('Teller copy reprint failed for ticket', item, err);
+        }
+      }
+
+      if (printedCount > 0) {
+        incrementReprintCount(printedCount);
+        setMsg(`Reprinted ${printedCount} ticket(s) from previous batch.`);
+      } else {
+        setMsg('Reprint completed, but no tickets were printed successfully.');
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Roll settings and derived values
@@ -306,12 +408,10 @@ export default function CategoryDetails({ token, event, category, onBack }) {
         try {
           await printCustomerReceipt({ ticketId, qrText, priceStr });
           successCount += 1;
-          successes.push({ ticketId, priceStr }); // store for teller copies
+          successes.push({ ticketId, qrText, priceStr }); // store for teller copies and reprint
         } catch {
           failureCount += 1;
         }
-
-        await new Promise(r => setTimeout(r, 150));
       } catch {
         failureCount += 1;
       }
@@ -330,6 +430,16 @@ export default function CategoryDetails({ token, event, category, onBack }) {
     // Update roll counter based on successful customer prints only
     if (successCount > 0) {
       persistTicketsSold(startSold + successCount);
+      saveLastBatch({
+        eventId: String(event.id),
+        categoryId: String(category.id),
+        tickets: successes.map((ticket) => ({
+          ticketId: ticket.ticketId || '',
+          qrText: ticket.qrText || '',
+          priceStr: ticket.priceStr || ''
+        })),
+        timestamp: Date.now()
+      });
     }
 
     // Reset
@@ -440,18 +550,49 @@ export default function CategoryDetails({ token, event, category, onBack }) {
                 required
               /> */}
 
-              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
                 <button type="submit" disabled={busy} style={styles.btnPrimary}>
                   {busy ? 'Submitting…' : 'Submit'}
                 </button>
                 <button type="button" onClick={onBack} style={styles.btnSecondary}>
                   Cancel
                 </button>
+                <button
+                  type="button"
+                  onClick={handleReprintPreviousBatch}
+                  disabled={busy || !lastBatch || lastBatch.tickets?.length === 0}
+                  style={{
+                    ...styles.btnSecondary,
+                    borderColor: '#4a90e2',
+                    color: '#fff',
+                    background: lastBatch ? '#4a90e2' : 'rgba(74,144,226,0.25)'
+                  }}
+                >
+                  Reprint Previous Batch
+                </button>
               </div>
             </form>
           )}
 
           {msg && <div style={styles.statusBox(msg.toLowerCase().includes('failed') ? 'salmon' : theme.accent)}>{msg}</div>}
+        </div>
+      </div>
+
+      {/* Reprint Summary Card */}
+      <div style={{ marginTop: 12 }}>
+        <div style={styles.card}>
+          <h4 style={styles.cardTitle}>Batch Reprint</h4>
+          <div style={styles.subtle}>
+            {lastBatch && lastBatch.tickets?.length > 0
+              ? `Last batch contains ${lastBatch.tickets.length} ticket(s). Reprints: ${reprintCount}.`
+              : 'No previous batch available. Complete a sale first to enable reprint.'}
+          </div>
+          {lastBatch?.tickets?.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={styles.pill}>Event ID: {lastBatch.eventId}</div>
+              <div style={styles.pill}>Category ID: {lastBatch.categoryId}</div>
+            </div>
+          )}
         </div>
       </div>
 
